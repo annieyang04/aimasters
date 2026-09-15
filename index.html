@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>2026 AI MASTERS 貴賓報到核銷系統</title>
+  <!-- 引入輕量級純前端掃碼函式庫 html5-qrcode -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    .container { width: 100%; max-width: 480px; }
+    header { text-align: center; margin-bottom: 15px; }
+    h1 { font-size: 1.25rem; margin: 5px 0; color: #38bdf8; }
+    p.sub { font-size: 0.85rem; color: #94a3b8; margin: 0; }
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #1e293b; border: 2px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
+    .card { background: #1e293b; border-radius: 12px; padding: 15px; margin-top: 15px; border: 1px solid #334155; }
+    .status-badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; margin-bottom: 10px; }
+    .status-idle { background: #334155; color: #cbd5e1; }
+    .status-success { background: #065f46; color: #34d399; }
+    .status-warning { background: #854d0e; color: #facc15; }
+    .status-error { background: #991b1b; color: #f87171; }
+    .info-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 0.95rem; border-bottom: 1px solid #334155; padding-bottom: 6px; }
+    .info-label { color: #94a3b8; }
+    .info-val { font-weight: bold; }
+    .btn-group { display: flex; gap: 10px; margin-top: 15px; }
+    button { flex: 1; padding: 12px; font-size: 0.95rem; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+    .btn-primary { background: #0284c7; color: white; }
+    .btn-primary:active { background: #0369a1; }
+    .btn-secondary { background: #475569; color: white; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>2026 AI MASTERS 現場報到</h1>
+    <p class="sub">請對準與會者手機信件內的 QR Code</p>
+  </header>
+
+  <!-- 鏡頭掃描框 -->
+  <div id="reader"></div>
+
+  <!-- 報到狀態卡片 -->
+  <div class="card" id="resultCard">
+    <div id="statusBadge" class="status-badge status-idle">待機中，準備掃描</div>
+    <div class="info-row">
+      <span class="info-label">報到編號</span>
+      <span class="info-val" id="resId">--</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">貴賓姓名</span>
+      <span class="info-val" id="resName">--</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">核銷時間</span>
+      <span class="info-val" id="resTime">--</span>
+    </div>
+    <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 8px;" id="msgBox">
+      系統已連線 Google Sheets 即時同步。
+    </div>
+    
+    <div class="btn-group">
+      <button class="btn-primary" id="btnNext" onclick="resumeScanning()" style="display:none;">繼續掃描下一位</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 🔴 請替換成您在 Apps Script 部署取得的 Web App URL
+  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyaQeuj9w423Q6aD5FzRJt7k2c8_L0e1we4suCzf3s3qqDgCCyxqWLd1XTGnnx5hls/exec";
+
+  let html5QrcodeScanner = null;
+  let isProcessing = false;
+
+  function initScanner() {
+    html5QrcodeScanner = new Html5Qrcode("reader");
+    const config = {
+      fps: 10,
+      qrbox: { width: 250, height: 250 },
+      aspectRatio: 1.0
+    };
+
+    // 優先使用後置鏡頭 (environment)
+    html5QrcodeScanner.start(
+      { facingMode: "environment" },
+      config,
+      onScanSuccess
+    ).catch(err => {
+      document.getElementById("msgBox").innerText = "無法啟動相機，請確認瀏覽器相機權限及是否使用 HTTPS 連線。";
+    });
+  }
+
+  // 掃描成功回呼
+  async function onScanSuccess(decodedText) {
+    if (isProcessing) return; // 防止重複處理解析
+    isProcessing = true;
+
+    // 暫停掃描相機，避免短時間內連掃
+    html5QrcodeScanner.pause();
+
+    // 更新 UI 狀態為傳輸中
+    updateUI("loading", "驗證中...", "--", "--", "--", "正在連線試算表驗證身分...");
+
+    try {
+      const response = await fetch(GAS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // 避免觸發複雜 CORS preflight
+        body: JSON.stringify({ qrText: decodedText })
+      });
+
+      const res = await response.json();
+
+      if (res.status === "success") {
+        updateUI(
+          "success",
+          "✅ 報到成功",
+          res.guest.id,
+          res.guest.name || "與會貴賓",
+          res.guest.checkinTime,
+          res.message
+        );
+      } else if (res.status === "warning") {
+        updateUI(
+          "warning",
+          "⚠️ 重複報到",
+          res.guest ? res.guest.id : "--",
+          res.guest ? res.guest.name : "--",
+          "--",
+          res.message
+        );
+      } else {
+        updateUI("error", "❌ 報到失敗", "--", "--", "--", res.message);
+      }
+    } catch (err) {
+      updateUI("error", "網路連線異常", "--", "--", "--", "無法連線至後端系統: " + err.message);
+    } finally {
+      document.getElementById("btnNext").style.display = "block";
+    }
+  }
+
+  function resumeScanning() {
+    document.getElementById("btnNext").style.display = "none";
+    updateUI("idle", "待機中，準備掃描", "--", "--", "--", "請將鏡頭對準下一張 QR Code");
+    isProcessing = false;
+    html5QrcodeScanner.resume();
+  }
+
+  function updateUI(state, badgeText, id, name, time, msg) {
+    const badge = document.getElementById("statusBadge");
+    badge.className = `status-badge status-${state}`;
+    badge.innerText = badgeText;
+
+    document.getElementById("resId").innerText = id;
+    document.getElementById("resName").innerText = name;
+    document.getElementById("resTime").innerText = time;
+    document.getElementById("msgBox").innerText = msg;
+  }
+
+  window.addEventListener("load", initScanner);
+</script>
+</body>
+</html>
