@@ -3,18 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>2026 AI MASTERS 極速報到系統</title>
-  <!-- 引入最新版純前端掃碼函式庫 -->
+  <title>2026 AI MASTERS 貴賓報到核銷系統</title>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
     body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 12px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
     .container { width: 100%; max-width: 440px; }
     header { text-align: center; margin-bottom: 10px; }
-    h1 { font-size: 1.2rem; margin: 4px 0; color: #38bdf8; }
-    p.sub { font-size: 0.8rem; color: #94a3b8; margin: 0; }
+    h1 { font-size: 1.25rem; margin: 4px 0; color: #38bdf8; }
+    p.sub { font-size: 0.85rem; color: #94a3b8; margin: 0; }
     
-    /* 掃描區域優化 */
     #reader-wrapper {
       position: relative;
       width: 100%;
@@ -25,7 +23,7 @@
     }
     #reader { width: 100%; }
     
-    /* 瞄準準心動態效果 */
+    /* 瞄準框 */
     .scan-guide {
       position: absolute;
       top: 50%; left: 50%;
@@ -39,22 +37,50 @@
 
     /* 資訊卡片 */
     .card { background: #1e293b; border-radius: 12px; padding: 16px; margin-top: 12px; border: 1px solid #334155; }
-    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 0.85rem; font-weight: bold; margin-bottom: 8px; }
-    .status-idle { background: #334155; color: #94a3b8; }
-    .status-syncing { background: #0369a1; color: #7dd3fc; }
-    .status-success { background: #065f46; color: #34d399; }
-    .status-warning { background: #854d0e; color: #fde047; }
-    .status-error { background: #991b1b; color: #f87171; }
     
+    /* 明顯的狀態標籤 */
+    .status-badge { 
+      display: block; 
+      text-align: center;
+      padding: 10px; 
+      border-radius: 8px; 
+      font-size: 1.1rem; 
+      font-weight: bold; 
+      margin-bottom: 12px; 
+      letter-spacing: 1px;
+    }
+    .status-idle { background: #334155; color: #cbd5e1; }
+    .status-syncing { background: #0369a1; color: #ffffff; animation: pulse 1.2s infinite; }
+    .status-success { background: #15803d; color: #ffffff; border: 2px solid #4ade80; }
+    .status-warning { background: #b45309; color: #ffffff; border: 2px solid #fde047; }
+    .status-error { background: #b91c1c; color: #ffffff; border: 2px solid #f87171; }
+    
+    @keyframes pulse {
+      0% { opacity: 0.7; }
+      50% { opacity: 1; }
+      100% { opacity: 0.7; }
+    }
+
     .info-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 0.95rem; border-bottom: 1px solid #283548; padding-bottom: 6px; }
     .info-label { color: #94a3b8; }
     .info-val { font-weight: bold; }
     
-    /* 下一位按鈕（超大按鍵防呆好點擊） */
+    /* 詳細訊息文字提示 */
+    #resMsg {
+      margin-top: 10px;
+      padding: 10px;
+      background: #0f172a;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      min-height: 42px;
+    }
+
+    /* 下一位按鈕 */
     #btnNext {
       width: 100%;
       padding: 15px;
-      font-size: 1.1rem;
+      font-size: 1.15rem;
       font-weight: bold;
       border: none;
       border-radius: 8px;
@@ -62,8 +88,8 @@
       background: #0284c7;
       color: white;
       margin-top: 14px;
-      box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.3);
       display: none;
+      box-shadow: 0 4px 10px rgba(2, 132, 199, 0.4);
     }
     #btnNext:active { background: #0369a1; transform: scale(0.98); }
   </style>
@@ -73,7 +99,7 @@
 <div class="container">
   <header>
     <h1>2026 AI MASTERS 現場報到</h1>
-    <p class="sub">對準 QR Code 即可瞬間辨識</p>
+    <p class="sub">對準貴賓手機信件中的 QR Code</p>
   </header>
 
   <div id="reader-wrapper">
@@ -82,7 +108,8 @@
   </div>
 
   <div class="card">
-    <div id="statusBadge" class="status-badge status-idle">● 相機準備就緒，請對準 QR Code</div>
+    <div id="statusBadge" class="status-badge status-idle">待機中，請對準 QR Code</div>
+    
     <div class="info-row">
       <span class="info-label">報到編號</span>
       <span class="info-val" id="resId" style="color: #38bdf8; font-size: 1.1rem;">--</span>
@@ -91,24 +118,22 @@
       <span class="info-label">貴賓姓名</span>
       <span class="info-val" id="resName">--</span>
     </div>
-    <div class="info-row">
-      <span class="info-label">核銷狀態</span>
-      <span class="info-val" id="resMsg" style="font-size: 0.85rem; color: #cbd5e1;">等待掃描...</span>
-    </div>
+    
+    <div id="resMsg" style="color: #94a3b8;">系統就緒，等待掃描...</div>
 
     <button id="btnNext" onclick="resumeScanning()">👉 繼續掃描下一位</button>
   </div>
 </div>
 
 <script>
-  // 🔴 請填入您的 Google Apps Script 部署 URL
+  // 🔴 請確保這是您最新的 Apps Script Web App URL
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyaQeuj9w423Q6aD5FzRJt7k2c8_L0e1we4suCzf3s3qqDgCCyxqWLd1XTGnnx5hls/exec";
 
   let scanner = null;
-  let isLocked = false; // 防止重複觸發
+  let isLocked = false;
 
-  // 1. 手機音效引擎（免外部 mp3 檔案，利用 Web Audio API 瞬間產生清脆嗶聲）
-  function playBeep(isSuccess = true) {
+  // 1. 雙頻音效引擎
+  function playSound(type) {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -116,29 +141,36 @@
       osc.connect(gain);
       gain.connect(ctx.destination);
       
-      if (isSuccess) {
-        // 成功音效：清脆高音 1200Hz
-        osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      if (type === "success") {
+        // 成功音：清脆兩段高音
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1760, ctx.currentTime + 0.08);
         gain.gain.setValueAtTime(0.3, ctx.currentTime);
         osc.start();
-        osc.stop(ctx.currentTime + 0.12);
-      } else {
-        // 失敗/警告：低音 400Hz
-        osc.frequency.setValueAtTime(400, ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      } else if (type === "warning") {
+        // 重複報到音：兩段低沉警告音
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.setValueAtTime(330, ctx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.4, ctx.currentTime);
         osc.start();
-        osc.stop(ctx.currentTime + 0.3);
+        osc.stop(ctx.currentTime + 0.35);
+      } else {
+        // 失敗音：急促短低音
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
       }
     } catch(e) {}
   }
 
-  // 2. 初始化極速相機
-  function initFastScanner() {
+  // 2. 初始化高速相機
+  function initScanner() {
     scanner = new Html5Qrcode("reader");
 
-    // 精準設定解析度與較高的辨識 FPS，大幅提升反應速度
     const cameraConfig = {
-      fps: 20, // 調升每秒取樣次數到 20 次
+      fps: 20, // 高採樣率，快速捕獲條碼
       qrbox: { width: 220, height: 220 },
       videoConstraints: {
         facingMode: { ideal: "environment" },
@@ -152,51 +184,32 @@
       cameraConfig,
       onScanSuccess
     ).catch(err => {
-      document.getElementById("resMsg").innerText = "無法存取相機，請確認允許鏡頭權限並使用 HTTPS 連線。";
+      document.getElementById("resMsg").innerText = "❌ 無法開啟相機，請確認瀏覽器相機權限與 HTTPS 連線。";
     });
   }
 
-  // 3. 掃描成功瞬發反應
+  // 3. 掃描觸發
   async function onScanSuccess(decodedText) {
     if (isLocked) return;
-    isLocked = true;
+    isLocked = true; // 立即上鎖，避免重疊掃描
 
-    // 立即暫停畫面，不再辨識任何新條碼
+    // 暫停相機
     scanner.pause();
     document.getElementById("scanGuide").style.display = "none";
 
-    // 震動手機 (若手機硬體支援)
-    if (navigator.vibrate) navigator.vibrate(100);
-
-    // ==========================================
-    // ⚡ 瞬間提取前端資訊 (0.05 秒瞬發顯示)
-    // ==========================================
-    let regId = "--";
-    let name = "--";
-    
+    // 提取畫面基本文字
     const idMatch = decodedText.match(/報到序號[:：]\s*([A-Za-z0-9\-]+)/);
-    if (idMatch) regId = idMatch[1].trim();
-
     const nameMatch = decodedText.match(/姓名[:：]\s*([^\n\r]+)/);
-    if (nameMatch) name = nameMatch[1].trim();
+    
+    document.getElementById("resId").innerText = idMatch ? idMatch[1].trim() : "識別中...";
+    document.getElementById("resName").innerText = nameMatch ? nameMatch[1].trim() : "識別中...";
 
-    document.getElementById("resId").innerText = regId;
-    document.getElementById("resName").innerText = name;
+    // 畫面進入「核銷中」狀態
+    updateBadge("syncing", "🔄 資料驗證核銷中...");
+    document.getElementById("resMsg").innerText = "正在連線試算表驗證身分與報到紀錄，請稍候...";
 
-    // 播放提示聲，讓現場人員立刻知道「有抓到了」
-    playBeep(true);
-
-    // 顯示為連線試算表中
-    updateBadge("syncing", "🔄 資料同步核銷中...");
-    document.getElementById("resMsg").innerText = "已辨識貴賓資料，正在回寫 Google 試算表...";
-
-    // 顯示按鈕（讓工作人員可以隨時點下一位）
-    document.getElementById("btnNext").style.display = "block";
-
-    // ==========================================
-    // 背景非同步送到後端 Google Apps Script
-    // ==========================================
     try {
+      // 呼叫 Google Apps Script 後端
       const response = await fetch(GAS_API_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -205,36 +218,57 @@
 
       const res = await response.json();
 
+      // ==========================================
+      // 根據 Google Sheet 回傳的真實狀態精確判定
+      // ==========================================
       if (res.status === "success") {
-        updateBadge("success", "✅ 核銷完成，歡迎蒞臨");
-        document.getElementById("resMsg").innerText = `已於 ${res.guest.checkinTime} 登記報到！`;
-      } else if (res.status === "warning") {
-        playBeep(false); // 發出警告嗶聲
-        updateBadge("warning", "⚠️ 重複報到");
-        document.getElementById("resMsg").innerText = res.message;
-      } else {
-        playBeep(false);
+        // ✅ 報到成功
+        playSound("success");
+        updateBadge("success", "✅ 報到成功！歡迎蒞臨");
+        document.getElementById("resId").innerText = res.guest.id;
+        document.getElementById("resName").innerText = res.guest.name || "--";
+        document.getElementById("resMsg").innerHTML = `<span style="color: #4ade80;">成功寫入試算表！核銷時間：${res.guest.checkinTime}</span>`;
+      } 
+      else if (res.status === "warning") {
+        // ⚠️ 重複報到
+        playSound("warning");
+        if (navigator.vibrate) navigator.vibrate([150, 100, 150]); // 雙震動提醒
+        updateBadge("warning", "⚠️ 重複報到！請注意");
+        if (res.guest) {
+          document.getElementById("resId").innerText = res.guest.id;
+          document.getElementById("resName").innerText = res.guest.name || "--";
+        }
+        document.getElementById("resMsg").innerHTML = `<span style="color: #fde047; font-weight: bold;">${res.message}</span>`;
+      } 
+      else {
+        // ❌ 報到失敗（查無此人或非本活動）
+        playSound("error");
         updateBadge("error", "❌ 報到失敗");
-        document.getElementById("resMsg").innerText = res.message;
+        document.getElementById("resMsg").innerHTML = `<span style="color: #f87171;">${res.message}</span>`;
       }
+
     } catch (err) {
-      updateBadge("error", "網路同步失敗");
-      document.getElementById("resMsg").innerText = "無法連線至試算表，請確認網路連線。";
+      playSound("error");
+      updateBadge("error", "網路連線異常");
+      document.getElementById("resMsg").innerText = "無法連線至 Google 試算表，請檢查網路狀態或重試。";
+    } finally {
+      // 一律顯示「繼續掃描下一位」大按鈕
+      document.getElementById("btnNext").style.display = "block";
     }
   }
 
-  // 4. 點選「繼續掃描下一位」
+  // 4. 重啟掃描下一位
   function resumeScanning() {
     document.getElementById("btnNext").style.display = "none";
     document.getElementById("scanGuide").style.display = "block";
-    updateBadge("idle", "● 相機準備就緒，請對準 QR Code");
     
+    updateBadge("idle", "待機中，請對準 QR Code");
     document.getElementById("resId").innerText = "--";
     document.getElementById("resName").innerText = "--";
-    document.getElementById("resMsg").innerText = "等待掃描...";
+    document.getElementById("resMsg").innerText = "系統就緒，等待掃描...";
     
     isLocked = false;
-    scanner.resume(); // 重啟相機取樣
+    scanner.resume();
   }
 
   function updateBadge(state, text) {
@@ -243,7 +277,7 @@
     badge.innerText = text;
   }
 
-  window.addEventListener("load", initFastScanner);
+  window.addEventListener("load", initScanner);
 </script>
 </body>
 </html>
